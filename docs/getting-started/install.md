@@ -75,3 +75,6 @@ packages:
 
 See [Updates](/getting-started/updates) for how OTA updates work on community
 devices and how releases relate to upstream versions.
+
+Hitting an error? See [Troubleshooting](/getting-started/troubleshooting) for
+common install and build problems.
