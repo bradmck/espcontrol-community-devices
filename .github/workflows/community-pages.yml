@@ -77,7 +77,7 @@ jobs:
       - name: Assemble (builds www.js)
         run: python3 community/scripts/assemble.py --skip-checks
 
-      - name: Download firmware from latest release
+      - name: Stage firmware manifests from latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -100,9 +100,13 @@ jobs:
             # served directly from the release assets (their download_count is
             # the per-device metric). Skipping the large binaries also removes
             # the download-and-re-host step that broke Pages during an outage.
+            # --clobber so a retry after a partial download (e.g. a transient
+            # HTTP 504 mid-fetch) overwrites the manifests already pulled
+            # instead of failing with "already exists" — without it the retry
+            # loop can never recover once attempt 1 lands any file.
             if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
                 --pattern "*-manifest.json" \
-                --dir release-assets; then
+                --dir release-assets --clobber; then
               break
             fi
             if [ "$attempt" = 3 ]; then
@@ -119,7 +123,7 @@ jobs:
             mkdir -p "community-pages/firmware/$slug"
             cp "$manifest" "community-pages/firmware/$slug/manifest.json"
           done
-          echo "Firmware content staged from $TAG:"
+          echo "Firmware manifests staged from $TAG:"
           find community-pages/firmware -type f | sort
 
       - name: Upload artifact
