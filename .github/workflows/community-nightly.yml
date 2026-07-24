@@ -66,6 +66,39 @@ jobs:
           sed -i "s|file:///config|file://${ASSEMBLY_ABS}|g" "builds/${{ matrix.device }}.yaml"
           esphome compile builds/${{ matrix.device }}.yaml
 
+  # Validate the supported install path against the *published* repo URL, so
+  # nightly also catches broken remote wiring / GitHub-side resolution that
+  # the PR-time local (file://) check can't. Validate-only; see
+  # community/scripts/builder_smoke.py and Community CI's builder-smoke job.
+  builder-smoke:
+    runs-on: ubuntu-latest
+    needs: determine-devices
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        device: ${{ fromJson(needs.determine-devices.outputs.devices) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Setup Python
+        uses: actions/setup-python@v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Install ESPHome (upstream-pinned version)
+        run: |
+          REF=$(cat community/upstream-ref.txt)
+          VER=$(curl -sf "https://raw.githubusercontent.com/jtenniswood/espcontrol/${REF}/.github/esphome.env" | grep '^ESPHOME_VERSION=' | cut -d= -f2)
+          echo "Installing esphome==$VER (upstream pin $REF)"
+          pip install "esphome==$VER"
+      - name: Validate published builder path
+        run: |
+          python3 community/scripts/builder_smoke.py \
+            --slug "${{ matrix.device }}" \
+            --repo-url "${{ github.server_url }}/${{ github.repository }}" \
+            --ref "${{ inputs.ref || 'main' }}"
+
   report:
     runs-on: ubuntu-latest
     needs: [determine-devices, compile]
@@ -86,8 +119,11 @@ jobs:
           while IFS= read -r slug; do
             [ -z "$slug" ] && continue
 
-            # Check if this device's compile job succeeded
-            JOB_RESULT=$(gh run view ${{ github.run_id }} --json jobs --jq ".jobs[] | select(.name | contains(\"$slug\")) | .conclusion" 2>/dev/null || echo "unknown")
+            # Check if this device's compile job succeeded. Scope to the
+            # compile matrix specifically — other per-device jobs (e.g.
+            # builder-smoke) also contain the slug and would otherwise return
+            # multiple conclusions and corrupt this comparison.
+            JOB_RESULT=$(gh run view ${{ github.run_id }} --json jobs --jq ".jobs[] | select((.name | startswith(\"compile\")) and (.name | contains(\"$slug\"))) | .conclusion" 2>/dev/null || echo "unknown")
 
             ISSUE_TITLE="[broken] $slug"
 

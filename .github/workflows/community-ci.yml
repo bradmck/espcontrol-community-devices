@@ -32,6 +32,7 @@ jobs:
           python3 community/scripts/postprocess_www.py --self-test
           python3 community/scripts/generate_issue_labels.py --self-test
           python3 community/scripts/label_issue.py --self-test
+          python3 community/scripts/builder_smoke.py --self-test
       - name: Status consistency
         run: python3 community/scripts/check_status_consistency.py
       - name: OTA buffer override present
@@ -158,5 +159,55 @@ jobs:
           echo "has_devices=$HAS compile=$RESULT"
           if [ "$HAS" = "true" ] && [ "$RESULT" != "success" ]; then
             echo "Compile matrix did not succeed"; exit 1
+          fi
+          echo "OK"
+
+  # Validate the *supported install path*: the compile job above rewrites
+  # file:///config to a local assembly, so it never exercises the remote
+  # package resolution a user (or the ESPHome Builder) actually runs. This
+  # job resolves devices/<slug>/packages.yaml from the commit under test via
+  # a local git URL and runs `esphome config`, catching config/pin schema
+  # mismatches (e.g. issue #48) that only surface on that path. Validate-only
+  # — firmware compilation stays with the compile matrix.
+  builder-smoke:
+    runs-on: ubuntu-latest
+    needs: [determine-devices]
+    if: needs.determine-devices.outputs.has_devices == 'true'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        device: ${{ fromJson(needs.determine-devices.outputs.devices) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Install ESPHome (upstream-pinned version)
+        run: |
+          # Match the ESPHome version the pinned upstream ships/tests with,
+          # so validation mirrors what a user's builder would resolve.
+          REF=$(cat community/upstream-ref.txt)
+          VER=$(curl -sf "https://raw.githubusercontent.com/jtenniswood/espcontrol/${REF}/.github/esphome.env" | grep '^ESPHOME_VERSION=' | cut -d= -f2)
+          echo "Installing esphome==$VER (upstream pin $REF)"
+          pip install "esphome==$VER"
+      - name: Validate builder install path
+        # Defaults: --repo-root this checkout, --ref HEAD (the PR merge commit).
+        run: python3 community/scripts/builder_smoke.py --slug "${{ matrix.device }}"
+
+  # Stable-named summary over the builder-smoke matrix (see compile-result).
+  builder-smoke-result:
+    runs-on: ubuntu-latest
+    needs: [determine-devices, builder-smoke]
+    if: always()
+    steps:
+      - name: Summarize builder-smoke matrix
+        run: |
+          HAS="${{ needs.determine-devices.outputs.has_devices }}"
+          RESULT="${{ needs.builder-smoke.result }}"
+          echo "has_devices=$HAS builder-smoke=$RESULT"
+          if [ "$HAS" = "true" ] && [ "$RESULT" != "success" ]; then
+            echo "Builder-path validation did not succeed"; exit 1
           fi
           echo "OK"
