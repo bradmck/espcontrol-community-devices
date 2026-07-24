@@ -45,6 +45,7 @@ export default defineConfig({
           { text: 'Overview', link: '/' },
           { text: 'Install', link: '/getting-started/install' },
           { text: 'Updates', link: '/getting-started/updates' },
+          { text: 'Troubleshooting', link: '/getting-started/troubleshooting' },
         ],
       },
       {

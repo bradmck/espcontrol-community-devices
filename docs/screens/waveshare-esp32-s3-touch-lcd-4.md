@@ -67,6 +67,9 @@ packages:
 Everything about using and configuring EspControl — cards, subpages, display
 behaviour, Home Assistant setup — is identical to official devices and
 documented upstream: [EspControl docs](https://jtenniswood.github.io/espcontrol/).
+
+Hitting an install or build error? See
+[Troubleshooting](/getting-started/troubleshooting) for common fixes.
 Device-specific problems belong on the
 [community issue tracker](https://github.com/lamiskin/espcontrol-community-devices/issues)
 — see the [Support Policy](/reference/support-policy).
