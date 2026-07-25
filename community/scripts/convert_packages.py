@@ -13,13 +13,19 @@ import re
 import sys
 import os
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ui_stamp  # noqa: E402  (sibling script, not an installed package)
+
 UPSTREAM_URL = "https://github.com/jtenniswood/espcontrol"
 PAGES_URL = "https://lamiskin.github.io/espcontrol-community-devices"
 
+# `&ui=<stamp>` busts the browser cache when the hosted bundle is rebuilt;
+# ui_stamp.py owns its value and CI checks it stays current. Only the
+# self-build path reads this js_url — released firmware embeds the bundle.
 COMMUNITY_OVERRIDES = f"""\
 # --- community hosting overrides ---
 web_server:
-  js_url: {PAGES_URL}/webserver/www.js?device=${{device_slug}}&v=${{firmware_version}}
+  js_url: {PAGES_URL}/webserver/www.js?device=${{device_slug}}&v=${{firmware_version}}&ui={{ui_stamp}}
 
 update:
   - id: !extend firmware_update
@@ -205,7 +211,9 @@ def convert_packages_content(content: str, pin: str) -> str:
     has_overrides = "# --- community hosting overrides ---" in after_text
 
     if not has_overrides:
-        output_lines.append(COMMUNITY_OVERRIDES)
+        output_lines.append(
+            COMMUNITY_OVERRIDES.replace("{ui_stamp}", ui_stamp.compute_stamp())
+        )
     else:
         # Keep existing content after packages block
         output_lines.extend(after_block)
