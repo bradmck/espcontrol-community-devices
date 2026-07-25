@@ -34,10 +34,15 @@ jobs:
           python3 community/scripts/generate_issue_labels.py --self-test
           python3 community/scripts/label_issue.py --self-test
           python3 community/scripts/builder_smoke.py --self-test
+          python3 community/scripts/ui_stamp.py --self-test
       - name: Status consistency
         run: python3 community/scripts/check_status_consistency.py
       - name: OTA buffer override present
         run: python3 community/scripts/check_ota_buffer.py
+      # A UI change that does not move the js_url stamp leaves self-builders
+      # on a cached bundle until the Pages TTL expires.
+      - name: UI cache stamp current
+        run: python3 community/scripts/ui_stamp.py --check
       - name: Docs pages current
         run: python3 community/scripts/generate_docs.py --check
       - name: Issue labels & bug form current
