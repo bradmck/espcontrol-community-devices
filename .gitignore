@@ -9,3 +9,7 @@ node_modules/
 
 # Live download-stats page: regenerated on every Pages build, not committed
 docs/reference/download-stats.md
+
+# Python bytecode from running the community/scripts helpers
+__pycache__/
+*.pyc
