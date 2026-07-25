@@ -5,6 +5,8 @@ name: Community Pages
 #   - the VitePress docs site (device pages generated from STATUS + catalog)
 #   - firmware manifests: downloaded from the latest GitHub Release (the .bin
 #     binaries are served directly from the release assets, not re-hosted here)
+#   - firmware version index: versions.json per device, assembled from the
+#     manifests of the last few releases (the panel's rollback list)
 #   - webserver/www.js: built from the assembled tree at the current pin
 # Triggered after releases, on status/registry changes to main, or manually.
 # No other workflow may deploy Pages — a second deployer caused a race
@@ -77,7 +79,7 @@ jobs:
       - name: Assemble (builds www.js)
         run: python3 community/scripts/assemble.py --skip-checks
 
-      - name: Stage firmware manifests from latest release
+      - name: Stage firmware manifests and version index from releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -123,6 +125,35 @@ jobs:
             mkdir -p "community-pages/firmware/$slug"
             cp "$manifest" "community-pages/firmware/$slug/manifest.json"
           done
+
+          # The panel also fetches firmware/<slug>/versions.json — the latest
+          # plus up to four previous releases, which is what the "Previous
+          # firmware" rollback panel lists. Without it every panel 404s on
+          # that request (issue #55). Build it from the release manifests
+          # themselves so it is regenerated from truth on every deploy.
+          mkdir -p "release-assets/history/$TAG"
+          cp release-assets/*-manifest.json "release-assets/history/$TAG/" 2>/dev/null || true
+          # Latest first, then the four releases before it. Order comes from
+          # the API, never from parsing our version strings.
+          TAGS="$TAG"
+          for prev in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 5 \
+              --json tagName --jq '.[].tagName' | grep -vxF "$TAG" | head -4); do
+            # Best effort: a hiccup fetching an OLD release just shortens the
+            # rollback list, and the next deploy rebuilds it. Only the latest
+            # release is load-bearing, and its download above is already fatal.
+            if gh release download "$prev" --repo "$GITHUB_REPOSITORY" \
+                --pattern "*-manifest.json" \
+                --dir "release-assets/history/$prev" --clobber; then
+              TAGS="$TAGS $prev"
+            else
+              echo "WARNING: could not fetch manifests for $prev — omitting it"
+            fi
+          done
+          python3 community/scripts/generate_versions_index.py \
+            --assets-dir release-assets/history \
+            --tags $TAGS \
+            --output-root community-pages/firmware
+
           echo "Firmware manifests staged from $TAG:"
           find community-pages/firmware -type f | sort
 
