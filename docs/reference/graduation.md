@@ -22,7 +22,8 @@ backups also exist as a safety net).
 ## The handover mechanics
 
 Community panels poll this project's update feed at
-`firmware/<device>/manifest.json`. Graduation uses that feed to redirect them:
+`firmware/<device>/manifest.json` (alongside `firmware/<device>/versions.json`,
+the rollback list). Graduation uses that feed to redirect them:
 
 1. **Upstream adopts the device** — its config lands in the upstream repo and
    ships in an upstream release with upstream-hosted firmware and update
