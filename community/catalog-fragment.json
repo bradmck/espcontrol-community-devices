@@ -49,12 +49,12 @@
             "aspect": "3/2"
           },
           "topbar": {
-            "height": 12.5,
+            "height": 9.5,
             "padding": "1.875cqw 1.25cqw 1.25cqw",
             "fontSize": 5.625
           },
           "grid": {
-            "top": 12.5,
+            "top": 9.5,
             "compactTop": 1.25,
             "left": 1.04,
             "right": 1.04,
@@ -65,7 +65,7 @@
           "btn": {
             "radius": 2.5,
             "padding": 4.375,
-            "iconSize": 11.875,
+            "iconSize": 10.0,
             "labelSize": 5.625,
             "coverArtTitleSize": 17.5,
             "coverArtArtistSize": 10.0,
