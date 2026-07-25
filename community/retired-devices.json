@@ -1,0 +1,10 @@
+{
+  "retired": {
+    "lilygo-jc3248w535": {
+      "successor": "guition-esp32-s3-jc3248w535",
+      "removed": "2026-07-22",
+      "publish_until": "2027-07-22",
+      "reason": "Duplicate registration of the Guition JC3248W535 board (removed in e7546b2). Same panel, pins, touch controller and backlight; the successor entry is the correct config for this hardware."
+    }
+  }
+}

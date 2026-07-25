@@ -48,6 +48,14 @@ Should upstream ever adopt a community device officially, its updates hand
 over to upstream's channel via a managed OTA transition — see
 [Device Graduation](/reference/graduation). You won't need to reflash.
 
+## If your device is removed from this project
+
+A device entry that turns out to be redundant — a duplicate of another board,
+say — is removed from the installer, but its update feed keeps running for at
+least 12 months. Your next update installs the firmware of the entry that
+replaced it, after which the panel updates from that device's feed. Again, no
+reflash — see [Device Graduation](/reference/graduation#devices-removed-from-this-project).
+
 ## New features and fixes
 
 Feature development happens upstream — community releases inherit it via pin

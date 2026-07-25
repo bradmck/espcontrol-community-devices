@@ -46,6 +46,43 @@ the device is marked **Graduated**; its config is removed from this repo
 new installs come from
 [upstream's installer](https://jtenniswood.github.io/espcontrol/getting-started/install).
 
+## Devices removed from this project
+
+Graduation isn't the only way a device leaves. Sometimes an entry turns out to
+be wrong — a duplicate of another board, or hardware that was never really a
+separate product — and it is removed from the registry outright.
+
+The obligation to panels already in the field is the same: they poll
+`firmware/<device>/manifest.json` forever, and a path that starts returning
+404 quietly ends their updates. So a removed device is **retired**, not
+deleted, using the same handover mechanic:
+
+- Its slug moves to `community/retired-devices.json` with the slug of a
+  **successor** — a device still in `community/devices.json` whose firmware
+  those panels should run.
+- Every Pages build republishes the successor's manifest at the retired
+  device's feed path, so the next release those panels see offers the
+  successor's build. Installing it moves them onto the successor's feed for
+  good.
+- The handover feed stays published until its `publish_until` date — at least
+  12 months after removal — then retires.
+- Only `manifest.json` is republished, not `versions.json`. A rollback list at
+  the retired path could only offer builds of a device this project no longer
+  has, and the handover is meant to be a one-way door; those panels get a real
+  rollback list once they land on the successor's feed.
+
+A retirement is only safe when the successor's firmware actually runs on the
+hardware. That is the case for a duplicate entry (same board, one config was
+redundant); it is not the case for a device being dropped for lack of a
+maintainer, which needs its own decision rather than a redirect to an
+unrelated board.
+
+The Pages firmware tree is built from these two registries and nothing else.
+GitHub releases are immutable, so a removed device's manifest keeps shipping
+as an asset in every older release — publishing whatever assets the latest
+release happens to carry is what once left a removed device's feed live by
+accident.
+
 ## Edge cases
 
 - **Slug differences**: if upstream adopts the device under a different

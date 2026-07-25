@@ -21,8 +21,10 @@ on:
     paths:
       - community/STATUS.md
       - community/devices.json
+      - community/retired-devices.json
       - community/catalog-fragment.json
       - community/scripts/generate_docs.py
+      - community/scripts/stage_firmware.py
       - docs/**
       - package.json
   # Daily rebuild so the download-stats page stays semi-live (GitHub's
@@ -118,13 +120,16 @@ jobs:
             echo "Download attempt $attempt failed; retrying in 20s..."
             sleep 20
           done
-          for manifest in release-assets/*-manifest.json; do
-            [ -e "$manifest" ] || continue
-            base=$(basename "$manifest")
-            slug="${base%-manifest.json}"
-            mkdir -p "community-pages/firmware/$slug"
-            cp "$manifest" "community-pages/firmware/$slug/manifest.json"
-          done
+          # Registry-driven, NOT asset-driven: releases are immutable, so a
+          # removed device keeps shipping its manifest asset forever and a
+          # loop over the downloaded files republishes its update feed after
+          # the device is gone. stage_firmware.py publishes the slugs in
+          # community/devices.json plus the handover feeds in
+          # community/retired-devices.json, and ignores everything else.
+          python3 community/scripts/stage_firmware.py \
+            --assets release-assets \
+            --dest community-pages/firmware \
+            --tag "$TAG"
 
           # The panel also fetches firmware/<slug>/versions.json — the latest
           # plus up to four previous releases, which is what the "Previous
@@ -149,13 +154,20 @@ jobs:
               echo "WARNING: could not fetch manifests for $prev — omitting it"
             fi
           done
+          # devices.json only, so a retired slug gets its handover
+          # manifest.json but no versions.json: the rollback list would
+          # otherwise offer builds of a device this project no longer has, and
+          # the handover is meant to be a one-way door. Those panels get a
+          # real rollback list once they land on the successor's feed.
           python3 community/scripts/generate_versions_index.py \
             --assets-dir release-assets/history \
             --tags $TAGS \
             --output-root community-pages/firmware
 
           echo "Firmware manifests staged from $TAG:"
-          find community-pages/firmware -type f | sort
+          # Guarded: stage_firmware.py legitimately stages nothing when a
+          # release carries no manifests, and a bare find would fail the step.
+          find community-pages/firmware -type f 2>/dev/null | sort || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
