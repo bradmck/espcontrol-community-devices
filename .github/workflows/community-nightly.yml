@@ -202,11 +202,11 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             BRANCH="nightly-status/$(date -u +%Y%m%d-%H%M%S)"
             git checkout -b "$BRANCH"
-            # Device docs pages embed the status, so regenerate them in the
-            # same commit — otherwise CI's docs-current check fails this
-            # PR and auto-merge never completes.
+            # Device docs pages and the README device list embed the status,
+            # so regenerate them in the same commit — otherwise CI's
+            # docs-current check fails this PR and auto-merge never completes.
             python3 community/scripts/generate_docs.py
-            git add community/STATUS.md docs/
+            git add community/STATUS.md docs/ README.md
             git commit -m "chore: nightly status update"
             git push -u origin "$BRANCH"
             gh pr create --base main --head "$BRANCH" \
