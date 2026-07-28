@@ -20,6 +20,8 @@ Community port contributed via [PR #351](https://github.com/jtenniswood/espcontr
 
 ::: tip Hardware-verified
 This device has been verified on real hardware — it compiles, flashes, and runs EspControl correctly.
+
+Confirmed by @mglev1n ([#62](https://github.com/lamiskin/espcontrol-community-devices/issues/62)) at `community-v0.1.2-upstream.v2.6.3`.
 :::
 
 |  |
