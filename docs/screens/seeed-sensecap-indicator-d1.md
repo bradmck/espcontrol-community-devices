@@ -18,9 +18,13 @@ on the home screen.
 
 Community port contributed via [PR #351](https://github.com/jtenniswood/espcontrol/pull/351) by @davidmerrique.
 
-::: warning Not yet hardware-verified
-This device compiles and is flashable, but nobody has confirmed it on real hardware yet. It may not work. If you own this panel, [verifying it](/reference/support-policy#hardware-verification) is the most valuable contribution you can make.
+::: tip Hardware-verified
+This device has been verified on real hardware — it compiles, flashes, and runs EspControl correctly.
 :::
+
+|  |
+|:--:|
+| ![Seeed SenseCAP Indicator D1 running EspControl](/images/seeed-sensecap-indicator-d1-verified-1.jpg) |
 
 ## Specifications
 
