@@ -44,7 +44,7 @@ jobs:
       - name: Assemble
         run: python3 community/scripts/assemble.py --skip-web
       - name: Setup Python
-        uses: actions/setup-python@v6.3.0
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
       - name: Install ESPHome
@@ -83,7 +83,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Python
-        uses: actions/setup-python@v6.3.0
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
       - name: Install ESPHome (upstream-pinned version)
