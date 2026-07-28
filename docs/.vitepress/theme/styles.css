@@ -1,15 +1,35 @@
-/* Keep the look close to upstream EspControl's docs (default VitePress
-   theme) with a subtle visual cue that this is the community site. */
+/* Lavender brand accent. Upstream EspControl's docs run the default
+   VitePress indigo, so a distinct hue makes it obvious at a glance which
+   site you are on — this one is unofficial and community-maintained.
+
+   VitePress derives links, tip callouts, badges and the install button from
+   these four variables, so they are the only ones that need setting. */
 
 :root {
-  --vp-c-brand-1: #b45309;
-  --vp-c-brand-2: #d97706;
-  --vp-c-brand-3: #f59e0b;
-  --vp-c-brand-soft: rgba(245, 158, 11, 0.14);
+  --vp-c-brand-1: #6d28d9;
+  --vp-c-brand-2: #7c3aed;
+  --vp-c-brand-3: #8b5cf6;
+  --vp-c-brand-soft: rgba(139, 92, 246, 0.14);
 }
 
 .dark {
-  --vp-c-brand-1: #fbbf24;
-  --vp-c-brand-2: #f59e0b;
-  --vp-c-brand-3: #d97706;
+  --vp-c-brand-1: #c4b5fd;
+  --vp-c-brand-2: #a78bfa;
+  --vp-c-brand-3: #8b5cf6;
+  --vp-c-brand-soft: rgba(167, 139, 250, 0.16);
 }
+
+/* Buttons default to brand-3/2/1 as their bg with permanently white text,
+   which fails contrast at the lighter end of the ramp — and in dark mode
+   brand-1 is the *lightest* shade, so the active state would be white on
+   pale lavender. Pin the button ramp to shades that stay readable in both
+   themes. */
+:root,
+.dark {
+  --vp-button-brand-bg: #7c3aed;
+  --vp-button-brand-hover-bg: #6d28d9;
+  --vp-button-brand-active-bg: #5b21b6;
+}
+
+/* Warnings stay amber on purpose: with a lavender brand they now read as a
+   distinct signal rather than blending into the accent colour. */
