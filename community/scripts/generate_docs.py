@@ -76,15 +76,28 @@ def parse_status(path):
     rows = {}
     with open(path, encoding="utf-8") as f:
         for line in f:
+            if not line.lstrip().startswith("|"):
+                continue
             parts = [p.strip() for p in line.split("|")]
-            if len(parts) >= 7 and parts[2] and parts[2] != "Slug" \
-                    and not set(parts[2]) <= {"-"}:
+            is_row = (len(parts) > 2 and parts[1] and parts[2]
+                      and parts[2] != "Slug"
+                      and not set(parts[2]) <= {"-"})
+            # A short row would otherwise be skipped silently and the device
+            # would fall back to Untested defaults — fail loudly instead.
+            if is_row and len(parts) < 9:
+                print(f"ERROR: STATUS.md row for '{parts[2]}' has "
+                      f"{len(parts) - 2} columns, expected 7 "
+                      f"(Device, Slug, Status, Last verified, Verified by, "
+                      f"Owner, Source)", file=sys.stderr)
+                sys.exit(1)
+            if is_row:
                 rows[parts[2]] = {
                     "name": parts[1],
                     "status": parts[3],
                     "verified": parts[4],
-                    "owner": parts[5],
-                    "source": parts[6],
+                    "verified_by": parts[5],
+                    "owner": parts[6],
+                    "source": parts[7],
                 }
     return rows
 
@@ -125,6 +138,8 @@ def load_devices():
             "chip": CHIP_NAMES.get(
                 entry.get("profiles", {}).get("platform", ""), "?"),
             "status": row.get("status", "Untested"),
+            "verified": row.get("verified", ""),
+            "verified_by": row.get("verified_by", ""),
             "owner": row.get("owner", ""),
             "source": row.get("source", ""),
             "buy": public.get("buy", ""),
@@ -165,9 +180,26 @@ def photo_block(d):
     return f"\n{header}\n{sep}\n| {cells} |\n"
 
 
+def unset(value):
+    """A STATUS.md cell carrying no value: empty or a run of dashes."""
+    return not value or set(value) <= {"-"}
+
+
+def verified_credit(d):
+    """Credit line for the status callout: who confirmed the device on real
+    hardware, and at which release pin. Both cells are optional, so this
+    degrades to whichever half STATUS.md actually records."""
+    if d["status"] != "Working" or unset(d["verified_by"]):
+        return ""
+    pin = ("" if unset(d["verified"])
+           else f" at `{d['verified']}`")
+    return f"\n\nConfirmed by {d['verified_by']}{pin}."
+
+
 def device_page(d):
     section_kind, section_title, section_body = STATUS_SECTIONS.get(
         d["status"], STATUS_SECTIONS["Untested"])
+    section_body += verified_credit(d)
 
     install = ""
     if d["status"] in ("Working", "Untested"):
