@@ -19,10 +19,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          source .github/scripts/retry.sh
           CURRENT=$(cat community/upstream-ref.txt)
           echo "current_ref=$CURRENT" >> $GITHUB_OUTPUT
 
-          LATEST=$(gh api repos/jtenniswood/espcontrol/releases/latest --jq .tag_name)
+          LATEST=$(retry gh api repos/jtenniswood/espcontrol/releases/latest --jq .tag_name)
           echo "Latest upstream: $LATEST, current pin: $CURRENT"
 
           if [ "$LATEST" != "$CURRENT" ]; then
@@ -46,31 +47,37 @@ jobs:
           python3 community/scripts/bump_refs.py ${{ needs.check-upstream.outputs.new_ref }}
       - name: Create branch
         run: |
+          source .github/scripts/retry.sh
           BRANCH="ref-bump/${{ needs.check-upstream.outputs.new_ref }}"
           git checkout -b "$BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "chore: bump upstream ref to ${{ needs.check-upstream.outputs.new_ref }}"
-          git push -u origin "$BRANCH"
+          retry git push -u origin "$BRANCH"
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
       - name: Assemble
-        run: python3 community/scripts/assemble.py --skip-web
+        run: |
+          source .github/scripts/retry.sh
+          retry python3 community/scripts/assemble.py --skip-web
       - name: Setup Python
         uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
       - name: Install ESPHome
-        run: pip install esphome==$(grep ESPHOME_VERSION .assembly/.github/esphome.env | cut -d= -f2)
+        run: |
+          source .github/scripts/retry.sh
+          retry pip install esphome==$(grep ESPHOME_VERSION .assembly/.github/esphome.env | cut -d= -f2)
       - name: Refresh vendored common
         run: |
+          source .github/scripts/retry.sh
           python3 community/scripts/vendor_common.py --source .assembly
           if ! git diff --quiet -- common/; then
             git add common/
             git commit -m "chore: refresh vendored common/ for ${{ needs.check-upstream.outputs.new_ref }}"
-            git push
+            retry git push
           fi
       - name: Include parity report
         id: parity
@@ -83,6 +90,11 @@ jobs:
         id: compile
         continue-on-error: true
         run: |
+          source .github/scripts/retry.sh
+          # Without pipefail, `if esphome compile ... | tail -5` tests tail's
+          # exit status, which is always 0 — every device was reported ✅ in
+          # the PR body no matter how the compile went.
+          set -o pipefail
           DEVICES=$(python3 -c "import json; print('\n'.join(json.load(open('community/devices.json'))['devices']))")
           RESULTS=""
           OVERALL="success"
@@ -90,7 +102,7 @@ jobs:
             [ -z "$slug" ] && continue
             echo "=== Compiling $slug ==="
             cd .assembly
-            if esphome compile "builds/$slug.yaml" 2>&1 | tail -5; then
+            if RETRY_ATTEMPTS=3 retry esphome compile "builds/$slug.yaml" 2>&1 | tail -5; then
               RESULTS="$RESULTS\n- ✅ $slug"
             else
               RESULTS="$RESULTS\n- ❌ $slug"
@@ -106,10 +118,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          source .github/scripts/retry.sh
           PARITY=$(cat /tmp/parity-report.txt 2>/dev/null || echo "N/A")
           BRANCH="ref-bump/${{ needs.check-upstream.outputs.new_ref }}"
 
-          gh pr create \
+          retry gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "chore: bump upstream ref to ${{ needs.check-upstream.outputs.new_ref }}" \

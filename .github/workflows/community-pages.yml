@@ -59,7 +59,9 @@ jobs:
           cache: npm
 
       - name: Install docs dependencies
-        run: npm ci
+        run: |
+          source .github/scripts/retry.sh
+          retry npm ci
 
       - name: Generate device docs pages
         run: python3 community/scripts/generate_docs.py
@@ -79,17 +81,22 @@ jobs:
         run: npx vitepress build docs
 
       - name: Assemble (builds www.js)
-        run: python3 community/scripts/assemble.py --skip-checks
+        run: |
+          source .github/scripts/retry.sh
+          retry python3 community/scripts/assemble.py --skip-checks
 
       - name: Stage firmware manifests and version index from releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          source .github/scripts/retry.sh
           mkdir -p release-assets
           # Distinguish "no release exists" (fine: deploy without firmware)
           # from a transient API failure (fatal: deploying a firmware-less
           # site over a good one is how an outage broke the installer once).
-          if ! TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/tmp/relerr); then
+          # A repo with no releases burns the retries before reporting that,
+          # which costs a minute once rather than a bad deploy repeatedly.
+          if ! TAG=$(retry gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/tmp/relerr); then
             if grep -qiE "release not found|HTTP 404" /tmp/relerr; then
               echo "No releases exist yet — deploying docs without firmware content."
               exit 0
@@ -99,27 +106,20 @@ jobs:
             exit 1
           fi
           echo "Latest release: $TAG"
-          for attempt in 1 2 3; do
-            # Only the manifests are staged onto Pages now; the .bin files are
-            # served directly from the release assets (their download_count is
-            # the per-device metric). Skipping the large binaries also removes
-            # the download-and-re-host step that broke Pages during an outage.
-            # --clobber so a retry after a partial download (e.g. a transient
-            # HTTP 504 mid-fetch) overwrites the manifests already pulled
-            # instead of failing with "already exists" — without it the retry
-            # loop can never recover once attempt 1 lands any file.
-            if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-                --pattern "*-manifest.json" \
-                --dir release-assets --clobber; then
-              break
-            fi
-            if [ "$attempt" = 3 ]; then
-              echo "ERROR: release asset download failed after 3 attempts" >&2
-              exit 1
-            fi
-            echo "Download attempt $attempt failed; retrying in 20s..."
-            sleep 20
-          done
+          # Only the manifests are staged onto Pages now; the .bin files are
+          # served directly from the release assets (their download_count is
+          # the per-device metric). Skipping the large binaries also removes
+          # the download-and-re-host step that broke Pages during an outage.
+          # --clobber so a retry after a partial download (e.g. a transient
+          # HTTP 504 mid-fetch) overwrites the manifests already pulled
+          # instead of failing with "already exists" — without it no retry
+          # can recover once the first attempt lands any file.
+          if ! retry gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "*-manifest.json" \
+              --dir release-assets --clobber; then
+            echo "ERROR: release asset download failed after retries" >&2
+            exit 1
+          fi
           # Registry-driven, NOT asset-driven: releases are immutable, so a
           # removed device keeps shipping its manifest asset forever and a
           # loop over the downloaded files republishes its update feed after
@@ -141,12 +141,12 @@ jobs:
           # Latest first, then the four releases before it. Order comes from
           # the API, never from parsing our version strings.
           TAGS="$TAG"
-          for prev in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 5 \
+          for prev in $(retry gh release list --repo "$GITHUB_REPOSITORY" --limit 5 \
               --json tagName --jq '.[].tagName' | grep -vxF "$TAG" | head -4); do
             # Best effort: a hiccup fetching an OLD release just shortens the
             # rollback list, and the next deploy rebuilds it. Only the latest
             # release is load-bearing, and its download above is already fatal.
-            if gh release download "$prev" --repo "$GITHUB_REPOSITORY" \
+            if retry gh release download "$prev" --repo "$GITHUB_REPOSITORY" \
                 --pattern "*-manifest.json" \
                 --dir "release-assets/history/$prev" --clobber; then
               TAGS="$TAGS $prev"

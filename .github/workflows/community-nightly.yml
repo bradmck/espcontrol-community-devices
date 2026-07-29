@@ -10,6 +10,13 @@ on:
         required: false
         default: ""
 
+# Read-only by default; the report job widens this for itself. Without an
+# explicit grant the run inherits the repository default, which is read-only
+# here — that is why the first nightly to actually hit a broken device died
+# with "Resource not accessible by integration (createIssue)".
+permissions:
+  contents: read
+
 jobs:
   determine-devices:
     runs-on: ubuntu-latest
@@ -42,13 +49,19 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
           df -h
       - name: Assemble
-        run: python3 community/scripts/assemble.py --skip-web
+        # Clones upstream; clone_upstream() wipes .assembly/ first, so a
+        # retry after a half-finished clone starts clean.
+        run: |
+          source .github/scripts/retry.sh
+          retry python3 community/scripts/assemble.py --skip-web
       - name: Setup Python
         uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
       - name: Install ESPHome
-        run: pip install esphome==$(grep ESPHOME_VERSION .assembly/.github/esphome.env | cut -d= -f2)
+        run: |
+          source .github/scripts/retry.sh
+          retry pip install esphome==$(grep ESPHOME_VERSION .assembly/.github/esphome.env | cut -d= -f2)
       - name: Cache PlatformIO
         uses: actions/cache@v6
         with:
@@ -59,12 +72,19 @@ jobs:
           restore-keys: pio-nightly-${{ matrix.device }}-
       - name: Compile
         id: compile
+        # A compile is not just a build: it git-clones the pinned upstream and
+        # downloads remote fonts and toolchains first, and any of those can be
+        # reset mid-flight. Retries are cheap either way — a genuinely broken
+        # config fails in seconds during validation, and a re-attempt after a
+        # partial build reuses PlatformIO's cache. Fewer attempts than the
+        # default, since the slow case is a real compile.
         run: |
+          source .github/scripts/retry.sh
           cd .assembly
           # Fix external_components path for non-Docker CI (no /config mount)
           ASSEMBLY_ABS="$(pwd)"
           sed -i "s|file:///config|file://${ASSEMBLY_ABS}|g" "builds/${{ matrix.device }}.yaml"
-          esphome compile builds/${{ matrix.device }}.yaml
+          RETRY_ATTEMPTS=3 retry esphome compile builds/${{ matrix.device }}.yaml
 
   # Validate the supported install path against the *published* repo URL, so
   # nightly also catches broken remote wiring / GitHub-side resolution that
@@ -88,13 +108,26 @@ jobs:
           python-version: '3.12'
       - name: Install ESPHome (upstream-pinned version)
         run: |
+          source .github/scripts/retry.sh
           REF=$(cat community/upstream-ref.txt)
-          VER=$(curl -sf "https://raw.githubusercontent.com/jtenniswood/espcontrol/${REF}/.github/esphome.env" | grep '^ESPHOME_VERSION=' | cut -d= -f2)
+          ENV_URL="https://raw.githubusercontent.com/jtenniswood/espcontrol/${REF}/.github/esphome.env"
+          # Fetch and parse separately: piping curl straight into grep hides
+          # a fetch failure behind grep's exit status, so a reset connection
+          # surfaced as `pip install esphome==` with an empty version rather
+          # than as the network error it was.
+          ESPHOME_ENV=$(retry curl -sSfL --max-time 60 "$ENV_URL")
+          VER=$(printf '%s\n' "$ESPHOME_ENV" | grep '^ESPHOME_VERSION=' | cut -d= -f2)
+          if [ -z "$VER" ]; then
+            echo "ERROR: no ESPHOME_VERSION found in $ENV_URL" >&2
+            exit 1
+          fi
           echo "Installing esphome==$VER (upstream pin $REF)"
-          pip install "esphome==$VER"
+          retry pip install "esphome==$VER"
       - name: Validate published builder path
+        # esphome config clones this repo from GitHub to resolve the package.
         run: |
-          python3 community/scripts/builder_smoke.py \
+          source .github/scripts/retry.sh
+          retry python3 community/scripts/builder_smoke.py \
             --slug "${{ matrix.device }}" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \
             --ref "${{ inputs.ref || 'main' }}"
@@ -103,6 +136,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [determine-devices, compile]
     if: always()
+    permissions:
+      contents: write        # push the nightly-status branch
+      issues: write          # open / comment on / close [broken] issues
+      pull-requests: write   # open the STATUS.md PR and enable auto-merge
+      actions: write         # read this run's jobs, dispatch CI on the branch
     steps:
       - uses: actions/checkout@v7
         with:
@@ -112,6 +150,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          source .github/scripts/retry.sh
+
           DEVICES=$(python3 -c "import json; print('\n'.join(json.load(open('community/devices.json'))['devices']))")
 
           STATUS_CHANGED=false
@@ -123,17 +163,20 @@ jobs:
             # compile matrix specifically — other per-device jobs (e.g.
             # builder-smoke) also contain the slug and would otherwise return
             # multiple conclusions and corrupt this comparison.
-            JOB_RESULT=$(gh run view ${{ github.run_id }} --json jobs --jq ".jobs[] | select((.name | startswith(\"compile\")) and (.name | contains(\"$slug\"))) | .conclusion" 2>/dev/null || echo "unknown")
+            JOB_RESULT=$(retry gh run view ${{ github.run_id }} --json jobs --jq ".jobs[] | select((.name | startswith(\"compile\")) and (.name | contains(\"$slug\"))) | .conclusion" 2>/dev/null || echo "unknown")
 
             ISSUE_TITLE="[broken] $slug"
 
             if [ "$JOB_RESULT" = "failure" ]; then
               # Search for existing open issue with this title
-              EXISTING=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number' 2>/dev/null || true)
+              EXISTING=$(retry gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number' 2>/dev/null || true)
 
               if [ -z "$EXISTING" ] || [ "$EXISTING" = "null" ]; then
-                # Create new issue
-                gh issue create \
+                # Create new issue. Retried like the reads: a create that
+                # fails after the issue landed server-side would duplicate on
+                # the retry, but that is a narrow window next to losing the
+                # whole report job to one API blip.
+                retry gh issue create \
                   --title "$ISSUE_TITLE" \
                   --body "Nightly compile failed for \`$slug\` on $(date -u +%Y-%m-%d).
 
@@ -143,7 +186,7 @@ jobs:
                 echo "Created issue: $ISSUE_TITLE"
               else
                 # Comment on existing issue
-                gh issue comment "$EXISTING" \
+                retry gh issue comment "$EXISTING" \
                   --body "Still broken as of $(date -u +%Y-%m-%d).
 
           Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -165,11 +208,11 @@ jobs:
 
             elif [ "$JOB_RESULT" = "success" ]; then
               # Device compiles — check if it was previously broken
-              EXISTING=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number' 2>/dev/null || true)
+              EXISTING=$(retry gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number' 2>/dev/null || true)
 
               if [ -n "$EXISTING" ] && [ "$EXISTING" != "null" ]; then
                 # Close the broken issue
-                gh issue close "$EXISTING" \
+                retry gh issue close "$EXISTING" \
                   --comment "Device compiles again as of $(date -u +%Y-%m-%d). Restoring status.
 
           Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -208,10 +251,10 @@ jobs:
             python3 community/scripts/generate_docs.py
             git add community/STATUS.md docs/ README.md
             git commit -m "chore: nightly status update"
-            git push -u origin "$BRANCH"
-            gh pr create --base main --head "$BRANCH" \
+            retry git push -u origin "$BRANCH"
+            retry gh pr create --base main --head "$BRANCH" \
               --title "chore: nightly status update $(date -u +%Y-%m-%d)" \
               --body "Automated STATUS.md flips from the nightly compile run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            gh workflow run community-ci.yml --ref "$BRANCH"
-            gh pr merge "$BRANCH" --auto --merge --delete-branch
+            retry gh workflow run community-ci.yml --ref "$BRANCH"
+            retry gh pr merge "$BRANCH" --auto --merge --delete-branch
           fi

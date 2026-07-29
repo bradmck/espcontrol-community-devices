@@ -27,9 +27,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          source .github/scripts/retry.sh
           LABEL="${{ steps.resolve.outputs.label }}"
           # Self-heal: ensure the label exists (a brand-new device's label
           # sync may not have run yet) before applying it.
           COLOR=$(jq -r .color community/device-labels.json)
-          gh label create "$LABEL" --color "$COLOR" --force
-          gh issue edit "${{ github.event.issue.number }}" --add-label "$LABEL"
+          retry gh label create "$LABEL" --color "$COLOR" --force
+          retry gh issue edit "${{ github.event.issue.number }}" --add-label "$LABEL"
