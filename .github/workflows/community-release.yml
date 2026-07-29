@@ -38,7 +38,9 @@ jobs:
           df -h
 
       - name: Assemble
-        run: python3 community/scripts/assemble.py
+        run: |
+          source .github/scripts/retry.sh
+          retry python3 community/scripts/assemble.py
 
       - name: Setup Python
         uses: actions/setup-python@v7.0.0
@@ -46,7 +48,9 @@ jobs:
           python-version: '3.12'
 
       - name: Install ESPHome
-        run: pip install esphome==$(grep ESPHOME_VERSION .assembly/.github/esphome.env | cut -d= -f2)
+        run: |
+          source .github/scripts/retry.sh
+          retry pip install esphome==$(grep ESPHOME_VERSION .assembly/.github/esphome.env | cut -d= -f2)
 
       - name: Cache PlatformIO
         uses: actions/cache@v6
@@ -61,6 +65,7 @@ jobs:
 
       - name: Compile and collect firmware
         run: |
+          source .github/scripts/retry.sh
           DEVICES=$(python3 -c "import json; print('\n'.join(json.load(open('community/devices.json'))['devices']))")
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${{ steps.version.outputs.version }}"
@@ -86,7 +91,7 @@ jobs:
             ASSEMBLY_ABS="$(pwd)"
             sed -i "s|file:///config|file://${ASSEMBLY_ABS}|g" "builds/${slug}.factory.yaml"
 
-            esphome compile "builds/${slug}.factory.yaml"
+            RETRY_ATTEMPTS=3 retry esphome compile "builds/${slug}.factory.yaml"
 
             # Find binaries
             FACTORY=$(find builds/.esphome/build -name "firmware.factory.bin" | head -1)
@@ -119,6 +124,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          source .github/scripts/retry.sh
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${{ steps.version.outputs.version }}"
           UPSTREAM_REF=$(cat community/upstream-ref.txt)
@@ -147,7 +153,7 @@ jobs:
 
           # Collect all binary files
           FILES=$(find release-artifacts -name "*.bin" -o -name "*-manifest.json" | sort)
-          gh release create "$TAG" $FILES \
+          retry gh release create "$TAG" $FILES \
             --title "${VERSION}" \
             --notes-file "$NOTES_FILE"
 

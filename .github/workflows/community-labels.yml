@@ -23,11 +23,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          source .github/scripts/retry.sh
           COLOR=$(jq -r .color community/device-labels.json)
           jq -c '.devices[]' community/device-labels.json | while read -r d; do
             LABEL=$(jq -r .label <<<"$d")
             NAME=$(jq -r .name <<<"$d")
-            gh label create "$LABEL" \
+            retry gh label create "$LABEL" \
               --description "Issues for the $NAME" \
               --color "$COLOR" --force
           done

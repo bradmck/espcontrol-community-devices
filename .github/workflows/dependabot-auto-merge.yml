@@ -23,6 +23,11 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Base-branch checkout only (never the PR head — this is
+      # pull_request_target, so the head is untrusted); it is here solely to
+      # make the shared retry helper available to the step below.
+      - uses: actions/checkout@v7
+
       - name: Enable auto-merge for minor/patch
         if: >-
           steps.meta.outputs.update-type == 'version-update:semver-minor' ||
@@ -30,4 +35,6 @@ jobs:
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge --auto --merge "$PR_URL"
+        run: |
+          source .github/scripts/retry.sh
+          retry gh pr merge --auto --merge "$PR_URL"

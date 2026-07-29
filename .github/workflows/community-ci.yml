@@ -36,6 +36,7 @@ jobs:
           python3 community/scripts/label_issue.py --self-test
           python3 community/scripts/builder_smoke.py --self-test
           python3 community/scripts/ui_stamp.py --self-test
+          bash .github/scripts/retry.sh --self-test
       - name: Status consistency
         run: python3 community/scripts/check_status_consistency.py
       - name: OTA buffer override present
@@ -100,7 +101,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Assemble
-        run: python3 community/scripts/assemble.py --skip-checks --skip-web
+        run: |
+          source .github/scripts/retry.sh
+          retry python3 community/scripts/assemble.py --skip-checks --skip-web
       - name: Pin consistency
         run: python3 community/scripts/check_pin_consistency.py
       - name: Include parity
@@ -128,13 +131,17 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
           df -h
       - name: Assemble
-        run: python3 community/scripts/assemble.py --skip-web
+        run: |
+          source .github/scripts/retry.sh
+          retry python3 community/scripts/assemble.py --skip-web
       - name: Setup Python
         uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
       - name: Install ESPHome
-        run: pip install esphome==$(grep ESPHOME_VERSION .assembly/.github/esphome.env | cut -d= -f2)
+        run: |
+          source .github/scripts/retry.sh
+          retry pip install esphome==$(grep ESPHOME_VERSION .assembly/.github/esphome.env | cut -d= -f2)
       - name: Cache PlatformIO
         uses: actions/cache@v6
         with:
@@ -144,12 +151,15 @@ jobs:
           key: pio-${{ matrix.device }}-${{ hashFiles('community/upstream-ref.txt') }}
           restore-keys: pio-${{ matrix.device }}-
       - name: Compile
+        # See the nightly's compile step: a compile clones and downloads
+        # before it builds, and a re-attempt reuses the PlatformIO cache.
         run: |
+          source .github/scripts/retry.sh
           cd .assembly
           # Fix external_components path for non-Docker CI (no /config mount)
           ASSEMBLY_ABS="$(pwd)"
           sed -i "s|file:///config|file://${ASSEMBLY_ABS}|g" "builds/${{ matrix.device }}.yaml"
-          esphome compile builds/${{ matrix.device }}.yaml
+          RETRY_ATTEMPTS=3 retry esphome compile builds/${{ matrix.device }}.yaml
 
   # Single stable-named summary over the compile matrix so branch
   # protection can require it (matrix job names vary per device).
@@ -193,15 +203,29 @@ jobs:
           python-version: '3.12'
       - name: Install ESPHome (upstream-pinned version)
         run: |
+          source .github/scripts/retry.sh
           # Match the ESPHome version the pinned upstream ships/tests with,
           # so validation mirrors what a user's builder would resolve.
           REF=$(cat community/upstream-ref.txt)
-          VER=$(curl -sf "https://raw.githubusercontent.com/jtenniswood/espcontrol/${REF}/.github/esphome.env" | grep '^ESPHOME_VERSION=' | cut -d= -f2)
+          ENV_URL="https://raw.githubusercontent.com/jtenniswood/espcontrol/${REF}/.github/esphome.env"
+          # Fetch and parse separately: piping curl straight into grep hides
+          # a fetch failure behind grep's exit status, so a reset connection
+          # surfaced as `pip install esphome==` with an empty version rather
+          # than as the network error it was.
+          ESPHOME_ENV=$(retry curl -sSfL --max-time 60 "$ENV_URL")
+          VER=$(printf '%s\n' "$ESPHOME_ENV" | grep '^ESPHOME_VERSION=' | cut -d= -f2)
+          if [ -z "$VER" ]; then
+            echo "ERROR: no ESPHOME_VERSION found in $ENV_URL" >&2
+            exit 1
+          fi
           echo "Installing esphome==$VER (upstream pin $REF)"
-          pip install "esphome==$VER"
+          retry pip install "esphome==$VER"
       - name: Validate builder install path
         # Defaults: --repo-root this checkout, --ref HEAD (the PR merge commit).
-        run: python3 community/scripts/builder_smoke.py --slug "${{ matrix.device }}"
+        # esphome config clones the repo to resolve the package.
+        run: |
+          source .github/scripts/retry.sh
+          retry python3 community/scripts/builder_smoke.py --slug "${{ matrix.device }}"
 
   # Stable-named summary over the builder-smoke matrix (see compile-result).
   builder-smoke-result:

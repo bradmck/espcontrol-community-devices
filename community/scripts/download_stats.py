@@ -26,12 +26,17 @@ import json
 import os
 import subprocess
 import sys
+import time
+import types
 
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
 REPO = "lamiskin/espcontrol-community-devices"
 RECENT_N = 5
+# Matches .github/scripts/retry.sh: 4 attempts, 5s/15s/45s backoff.
+FETCH_ATTEMPTS = 4
+FETCH_BACKOFF = 5
 
 
 def load_slugs(repo_root=None):
@@ -59,20 +64,40 @@ def load_names(repo_root=None):
     return names
 
 
-def fetch_releases():
+def fetch_releases(attempts=FETCH_ATTEMPTS, sleep=time.sleep):
     """
     Return the repo's releases as a list of dicts, or None on any failure
     (caller renders a fallback page — this must never raise).
+
+    Retried like the shell-side calls in .github/scripts/retry.sh. A fetch
+    failure here is deliberately non-fatal, which means a single API blip
+    would otherwise silently downgrade the stats page to the fallback until
+    the next daily rebuild — no job fails to tell anyone about it.
     """
-    try:
-        out = subprocess.run(
-            ["gh", "api", "--paginate", f"repos/{REPO}/releases?per_page=100"],
-            capture_output=True, text=True, timeout=60, check=True,
-        ).stdout
-        data = json.loads(out)
-        return data if isinstance(data, list) else None
-    except (subprocess.SubprocessError, OSError, ValueError):
-        return None
+    delay = FETCH_BACKOFF
+    for attempt in range(1, attempts + 1):
+        try:
+            out = subprocess.run(
+                ["gh", "api", "--paginate",
+                 f"repos/{REPO}/releases?per_page=100"],
+                capture_output=True, text=True, timeout=60, check=True,
+            ).stdout
+            data = json.loads(out)
+            if isinstance(data, list):
+                return data
+            reason = "unexpected payload (not a JSON list)"
+        except (subprocess.SubprocessError, OSError, ValueError) as exc:
+            reason = f"{type(exc).__name__}: {exc}"
+
+        if attempt == attempts:
+            print(f"[download_stats] release fetch failed after {attempt} "
+                  f"attempt(s): {reason}", file=sys.stderr)
+            return None
+        print(f"[download_stats] release fetch failed ({reason}) — attempt "
+              f"{attempt}/{attempts}, retrying in {delay}s", file=sys.stderr)
+        sleep(delay)
+        delay *= 3
+    return None
 
 
 def _release_time(rel):
@@ -259,6 +284,38 @@ def self_test():
 
     if "could not be fetched" not in render_fallback():
         failures.append("fallback page wrong")
+
+    # A transient API failure must be retried, not silently downgraded to the
+    # fallback page; exhausting the attempts must still return None.
+    real_run = subprocess.run
+    calls = {"n": 0}
+    no_sleep = lambda _seconds: None
+    try:
+        def flaky_run(*_args, **_kwargs):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise subprocess.SubprocessError("transient")
+            return types.SimpleNamespace(stdout="[]")
+
+        subprocess.run = flaky_run
+        if fetch_releases(sleep=no_sleep) != [] or calls["n"] != 3:
+            failures.append(
+                f"fetch_releases did not retry to success (calls={calls['n']})")
+
+        calls["n"] = 0
+
+        def always_fails(*_args, **_kwargs):
+            calls["n"] += 1
+            raise subprocess.SubprocessError("down")
+
+        subprocess.run = always_fails
+        if fetch_releases(attempts=2, sleep=no_sleep) is not None:
+            failures.append("fetch_releases must return None once exhausted")
+        if calls["n"] != 2:
+            failures.append(
+                f"fetch_releases attempt cap wrong (calls={calls['n']})")
+    finally:
+        subprocess.run = real_run
 
     if failures:
         for msg in failures:
