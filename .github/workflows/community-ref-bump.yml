@@ -5,9 +5,9 @@ on:
     - cron: "0 4 * * 1"  # Weekly Monday 4am UTC
   workflow_dispatch:
 
-# Read-only by default; the bump job widens this for itself. Without an
-# explicit grant the run inherits the repository default, which is read-only
-# here — that is why the push in the bump job died with a 403.
+# Read-only by default; each job below widens this for itself, and only for
+# as long as it actually needs write access. Without an explicit grant the
+# run inherits the repository default, which is read-only here.
 permissions:
   contents: read
 
@@ -39,14 +39,17 @@ jobs:
             echo "needs_bump=false" >> $GITHUB_OUTPUT
           fi
 
-  bump:
+  # Only step that needs write access to create the branch. Runs before any
+  # third-party code (upstream generators, esphome) executes, so a
+  # compromised dependency later in the pipeline never runs alongside this
+  # token.
+  push:
     runs-on: ubuntu-latest
     needs: check-upstream
     if: needs.check-upstream.outputs.needs_bump == 'true'
-    timeout-minutes: 120
+    timeout-minutes: 10
     permissions:
-      contents: write        # push the ref-bump branch and vendored-common commit
-      pull-requests: write   # open the ref-bump PR
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -64,6 +67,57 @@ jobs:
           git add -A
           git commit -m "chore: bump upstream ref to ${{ needs.check-upstream.outputs.new_ref }}"
           retry git push -u origin "$BRANCH"
+
+  # Clones upstream and runs its generator scripts — third-party code. Keeps
+  # write access (needed only to push the vendored-common refresh) but
+  # nothing beyond assemble/vendor runs here, so this token is never live
+  # alongside the esphome compiler.
+  assemble:
+    runs-on: ubuntu-latest
+    needs: [check-upstream, push]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ref-bump/${{ needs.check-upstream.outputs.new_ref }}
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+      - name: Assemble
+        run: |
+          source .github/scripts/retry.sh
+          retry python3 community/scripts/assemble.py --skip-web
+      - name: Refresh vendored common
+        run: |
+          source .github/scripts/retry.sh
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          python3 community/scripts/vendor_common.py --source .assembly
+          if ! git diff --quiet -- common/; then
+            git add common/
+            git commit -m "chore: refresh vendored common/ for ${{ needs.check-upstream.outputs.new_ref }}"
+            retry git push
+          fi
+
+  # Runs the esphome compiler — the highest-risk third-party code execution
+  # in this pipeline (it fetches and runs platformio toolchains). No
+  # contents:write here: this job cannot push anywhere in the repo even if
+  # compromised. It re-runs assemble to reproduce .assembly locally, since
+  # each job starts on a fresh runner.
+  compile:
+    runs-on: ubuntu-latest
+    needs: [check-upstream, push, assemble]
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ref-bump/${{ needs.check-upstream.outputs.new_ref }}
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
@@ -79,15 +133,6 @@ jobs:
         run: |
           source .github/scripts/retry.sh
           retry pip install esphome==$(grep ESPHOME_VERSION .assembly/.github/esphome.env | cut -d= -f2)
-      - name: Refresh vendored common
-        run: |
-          source .github/scripts/retry.sh
-          python3 community/scripts/vendor_common.py --source .assembly
-          if ! git diff --quiet -- common/; then
-            git add common/
-            git commit -m "chore: refresh vendored common/ for ${{ needs.check-upstream.outputs.new_ref }}"
-            retry git push
-          fi
       - name: Include parity report
         id: parity
         continue-on-error: true
