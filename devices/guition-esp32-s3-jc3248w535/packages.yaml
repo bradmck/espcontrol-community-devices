@@ -36,6 +36,8 @@ substitutions:
   clock_bar_item_gap: "60"
   clock_bar_visual_gap: "8"
   voice_clock_bar_hide_code: ""
+  battery_status_apply_code: ""
+  battery_status_hide_code: ""
   voice_clock_bar_apply_code: ""
   navigate_voice_target_code: |-
     ESP_LOGW("navigation", "Voice volume target is not available on this device");
@@ -83,21 +85,21 @@ substitutions:
 packages:
   upstream_a:
     url: https://github.com/jtenniswood/espcontrol
-    ref: v2.6.3
+    ref: v2.7.1
     refresh: 1d
     files:
       - common/config/entity_names.yaml
   device: !include device/device.yaml
   upstream_b:
     url: https://github.com/jtenniswood/espcontrol
-    ref: v2.6.3
+    ref: v2.7.1
     refresh: 1d
     files:
       - common/assets/icons.yaml
   fonts_device: !include device/fonts.yaml
   upstream_c:
     url: https://github.com/jtenniswood/espcontrol
-    ref: v2.6.3
+    ref: v2.7.1
     refresh: 1d
     files:
       - common/theme/button.yaml
@@ -138,7 +140,7 @@ packages:
 
 # --- community hosting overrides ---
 web_server:
-  js_url: https://lamiskin.github.io/espcontrol-community-devices/webserver/www.js?device=${device_slug}&v=${firmware_version}&ui=90e0936ea7be
+  js_url: https://lamiskin.github.io/espcontrol-community-devices/webserver/www.js?device=${device_slug}&v=${firmware_version}&ui=cc77c4d68ea0
 
 update:
   - id: !extend firmware_update

@@ -410,14 +410,16 @@ esphome:
               id(main_page)->obj,
               id(presence_sensor_entity).state,
               &id(presence_detected),
+              id(screen_schedule_sensor_entity).state,
+              &id(schedule_presence_detected),
               id(media_player_sleep_prevention_entity).state,
               &id(media_player_playing),
               []() {
                 return clock_bar_should_show(
                     id(clock_bar_enabled).state,
                     id(main_page)->obj,
-                    id(display_mode_controller).current_mode(),
-                    id(display_mode_controller).target_schedule_inactive());
+                    id(espcontrol_app).display().current_mode(),
+                    id(espcontrol_app).display().target_schedule_inactive());
               },
               []() {
                 id(screensaver_presence_wake).execute();
