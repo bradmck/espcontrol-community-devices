@@ -156,6 +156,9 @@ jobs:
             [ -z "$slug" ] && continue
             echo "=== Compiling $slug ==="
             cd .assembly
+            # Fix external_components path for non-Docker CI (no /config mount)
+            ASSEMBLY_ABS="$(pwd)"
+            sed -i "s|file:///config|file://${ASSEMBLY_ABS}|g" "builds/$slug.yaml"
             if RETRY_ATTEMPTS=3 retry esphome compile "builds/$slug.yaml" 2>&1 | tail -5; then
               RESULTS="$RESULTS\n- ✅ $slug"
             else
