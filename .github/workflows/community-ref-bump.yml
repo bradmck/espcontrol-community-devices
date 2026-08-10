@@ -57,6 +57,12 @@ jobs:
       - name: Bump refs
         run: |
           python3 community/scripts/bump_refs.py ${{ needs.check-upstream.outputs.new_ref }}
+      - name: Refresh UI cache stamp
+        run: |
+          # bump_refs.py just changed community/upstream-ref.txt, a
+          # ui_stamp input; without this, the policy check's ui_stamp
+          # --check fails for every device on the resulting PR.
+          python3 community/scripts/ui_stamp.py --write
       - name: Create branch
         run: |
           source .github/scripts/retry.sh
