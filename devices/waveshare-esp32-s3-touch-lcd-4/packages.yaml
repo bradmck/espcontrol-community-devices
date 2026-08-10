@@ -83,21 +83,21 @@ substitutions:
 packages:
   upstream_a:
     url: https://github.com/jtenniswood/espcontrol
-    ref: v2.6.3
+    ref: v2.7.1
     refresh: 1d
     files:
       - common/config/entity_names.yaml
   device: !include device/device.yaml
   upstream_b:
     url: https://github.com/jtenniswood/espcontrol
-    ref: v2.6.3
+    ref: v2.7.1
     refresh: 1d
     files:
       - common/assets/icons.yaml
   fonts_device: !include device/fonts.yaml
   upstream_c:
     url: https://github.com/jtenniswood/espcontrol
-    ref: v2.6.3
+    ref: v2.7.1
     refresh: 1d
     files:
       - common/theme/button.yaml
