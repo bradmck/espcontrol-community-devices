@@ -35,6 +35,7 @@ external_components:
     refresh: 1h
 
 espcontrol:
+  id: espcontrol_app
 
 esphome:
   name: ${name}

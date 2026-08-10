@@ -44,6 +44,7 @@ external_components:
     refresh: 1s
 
 espcontrol:
+  id: espcontrol_app
 
 # ---------------------------------------------------------------------------
 # ESPHome core (device name from substitutions)
