@@ -227,6 +227,9 @@ light:
                     espcontrol::DisplayMode::ACTIVE);
             then:
               - script.execute: screen_schedule_manual_sleep
+    on_state:
+      then:
+        - script.execute: display_backlight_handle_state
 
 # ---------------------------------------------------------------------------
 # Battery ADC sensor (LiPo voltage via GPIO 5 with voltage divider)
