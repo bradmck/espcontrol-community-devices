@@ -342,6 +342,8 @@ touchscreen:
       mirror_x: false
       mirror_y: false
     on_touch:
+      - script.execute: cover_art_pause_after_touch
+      - script.wait: cover_art_pause_after_touch
       - script.execute: screensaver_wake
 
 # -----------------------------------------------------------------------------
@@ -423,26 +425,41 @@ script:
     then:
       - script.execute: screensaver_wake
       - script.wait: screensaver_wake
+      - script.execute:
+          id: backlight_note_internal_brightness
+          brightness: 1.0
       - light.turn_on:
           id: display_backlight
           brightness: 100%
           transition_length: 0s
       - delay: 3s
+      - script.execute:
+          id: backlight_note_internal_brightness
+          brightness: 0.6
       - light.turn_on:
           id: display_backlight
           brightness: 60%
           transition_length: 0s
       - delay: 3s
+      - script.execute:
+          id: backlight_note_internal_brightness
+          brightness: 0.3
       - light.turn_on:
           id: display_backlight
           brightness: 30%
           transition_length: 0s
       - delay: 3s
+      - script.execute:
+          id: backlight_note_internal_brightness
+          brightness: 0.1
       - light.turn_on:
           id: display_backlight
           brightness: 10%
           transition_length: 0s
       - delay: 3s
+      - script.execute:
+          id: backlight_note_internal_brightness
+          brightness: 1.0
       - light.turn_on:
           id: display_backlight
           brightness: 100%
